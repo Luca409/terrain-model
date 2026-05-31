@@ -1,0 +1,16 @@
+# Generated output folders (recreated by generate_terrain.py)
+output_*/
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Intermediate build files
+terrain_solid.stl
+building_test.stl
+*.state
