@@ -1,0 +1,13 @@
+# Direct dependencies for scripts/generate_terrain.py
+# (geopandas, pyarrow, scipy, etc. are pulled in transitively by py3dep/overturemaps)
+certifi
+numpy
+trimesh
+mapbox-earcut
+rasterio
+shapely
+pyproj
+requests
+py3dep
+pynhd
+overturemaps

@@ -1,0 +1,35 @@
+{
+  "richmondville-9x9": {
+    "description": "~9×9 mile area (shifted 1.5 mi east), including Richmondville / Cross Hill (387 Cross Hill Rd)",
+    "bbox": {
+      "south": 42.5578611,
+      "west": -74.6096915,
+      "north": 42.688203,
+      "east": -74.4325465
+    },
+    "highlight_point": [42.6249041, -74.5171631],
+    "highlight_label": "387 Cross Hill Road, Richmondville NY"
+  },
+  "richmondville-3x3": {
+    "description": "~3×3 mile area centered on the exact center of richmondville-9x9 (42.6230321, -74.5211190)",
+    "bbox": {
+      "south": 42.6013076,
+      "west": -74.5506425,
+      "north": 42.6447566,
+      "east": -74.4915955
+    },
+    "highlight_point": null,
+    "highlight_label": null
+  },
+  "west-fulton-ny": {
+    "description": "~7×7 mile area centered on West Fulton hamlet (West Fulton Rd, Sawyer Hollow, Fulton Hill)",
+    "bbox": {
+      "south": 42.514000,
+      "west": -74.524000,
+      "north": 42.615000,
+      "east": -74.404000
+    },
+    "highlight_point": null,
+    "highlight_label": null
+  }
+}
