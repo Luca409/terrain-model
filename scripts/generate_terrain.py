@@ -385,6 +385,13 @@ def build_terrain_grid(XX, YY, ZZ):
 ROAD_OFFSET_MM = 0.35
 ROAD_SAMPLES_PER_MM = 1.5
 
+# Depth (mm) that overlays (roads, streams, ponds, buildings) extend DOWN into
+# the terrain. The terrain surface is a coarse interpolated grid while features
+# sample the full-res DEM, so the mesh can sit below a feature and leave a gap.
+# Extending each feature downward fills that gap with the feature's own color;
+# the part buried inside the terrain is hidden, and the top stays in place.
+FILL_DEPTH_MM = 2.0
+
 
 def _centerline_segments_in_bbox(center, W, H, clip_to_bbox):
     """Return LineString piece(s) for a centerline, clipped to the terrain rectangle."""
@@ -465,17 +472,40 @@ def build_ribbon_pairs(pts_ll, half_w, W, H, tr, elev_at_ll, z_ref, z_offset,
     return pairs
 
 
-def ribbon_mesh_from_pairs(pairs):
-    """Turn ribbon pairs into a triangle mesh (None if degenerate)."""
+def ribbon_mesh_from_pairs(pairs, skirt=0.0):
+    """Turn ribbon pairs into a triangle mesh (None if degenerate).
+
+    With skirt > 0 the ribbon becomes a solid prism whose top stays at the
+    sampled elevation and whose bottom drops by `skirt` mm into the terrain,
+    so colored side walls fill any gap below the ribbon.
+    """
     if len(pairs) < 2:
         return None
-    lv = np.array([p[0] for p in pairs])
-    rv = np.array([p[1] for p in pairs])
+    lv = np.array([p[0] for p in pairs], dtype=float)
+    rv = np.array([p[1] for p in pairs], dtype=float)
     n = len(lv)
-    vv = np.vstack([lv, rv])
+    if skirt <= 0:
+        vv = np.vstack([lv, rv])
+        faces = []
+        for i in range(n - 1):
+            faces += [[i, n + i, n + i + 1], [i, n + i + 1, i + 1]]
+        return trimesh.Trimesh(vertices=vv, faces=np.array(faces), process=False)
+
+    lb = lv.copy(); lb[:, 2] -= skirt
+    rb = rv.copy(); rb[:, 2] -= skirt
+    vv = np.vstack([lv, rv, lb, rb])   # blocks: TL, TR, BL, BR
+    def TL(i): return i
+    def TR(i): return n + i
+    def BL(i): return 2 * n + i
+    def BR(i): return 3 * n + i
     faces = []
     for i in range(n - 1):
-        faces += [[i, n + i, n + i + 1], [i, n + i + 1, i + 1]]
+        faces += [[TL(i), TR(i), TR(i + 1)], [TL(i), TR(i + 1), TL(i + 1)]]       # top
+        faces += [[BL(i), BR(i + 1), BR(i)], [BL(i), BL(i + 1), BR(i + 1)]]       # bottom
+        faces += [[TL(i), BL(i), BL(i + 1)], [TL(i), BL(i + 1), TL(i + 1)]]       # left wall
+        faces += [[TR(i), TR(i + 1), BR(i + 1)], [TR(i), BR(i + 1), BR(i)]]       # right wall
+    faces += [[TL(0), BL(0), BR(0)], [TL(0), BR(0), TR(0)]]                        # start cap
+    faces += [[TL(n - 1), TR(n - 1), BR(n - 1)], [TL(n - 1), BR(n - 1), BL(n - 1)]]  # end cap
     return trimesh.Trimesh(vertices=vv, faces=np.array(faces), process=False)
 
 
@@ -495,7 +525,7 @@ def place_trees(nlcd_path, spacing, elev_at_ll, print_xy_ll_fn, z_ref, W, H, tr)
             wy = ntf.f + (nr + 0.5) * ntf.e
             lon, lat = tr_inv.transform(wx, wy)
             px_x, px_y = print_xy_ll_fn(lon, lat, W, H)
-            bz = mm_v(elev_at_ll(lon, lat) - z_ref)
+            bz = mm_v(elev_at_ll(lon, lat) - z_ref) - FILL_DEPTH_MM
             th, ch = 4.0 * 0.35, 4.0 * 0.65
             trunk = trimesh.creation.cylinder(radius=0.4, height=th, sections=6)
             trunk.apply_translation([0, 0, th / 2])
@@ -631,8 +661,8 @@ def main(keep_cache=False):
             if not poly2d.is_valid: poly2d = poly2d.buffer(0)
             if poly2d.is_empty: continue
             try:
-                bld = extrude_polygon(poly2d, height=BUILDING_HEIGHT_MM)
-                bld.apply_translation([0, 0, bz])
+                bld = extrude_polygon(poly2d, height=BUILDING_HEIGHT_MM + FILL_DEPTH_MM)
+                bld.apply_translation([0, 0, bz - FILL_DEPTH_MM])
                 if i == highlight_idx:
                     colored(bld, COLORS['highlight']); highlight_list.append(bld)
                 else:
@@ -664,7 +694,7 @@ def main(keep_cache=False):
         pairs = build_ribbon_pairs(
             pts_ll, half_w, W, H, tr, elev_at_ll, z_ref, ROAD_OFFSET_MM,
             clip_to_bbox=True)
-        mesh = ribbon_mesh_from_pairs(pairs)
+        mesh = ribbon_mesh_from_pairs(pairs, skirt=FILL_DEPTH_MM)
         if mesh is None: continue
         colored(mesh, COLORS['roads']); road_list.append(mesh)
     groups['roads'] = road_list
@@ -718,8 +748,8 @@ def main(keep_cache=False):
         for part in parts:
             if part.is_empty or part.area <= 0: continue
             try:
-                slab=extrude_polygon(part, height=0.15)
-                slab.apply_translation([0,0,water_z])
+                slab=extrude_polygon(part, height=0.15 + FILL_DEPTH_MM)
+                slab.apply_translation([0,0,water_z - FILL_DEPTH_MM])
                 colored(slab, COLORS['ponds']); pond_list.append(slab)
             except: pass
 
@@ -729,7 +759,7 @@ def main(keep_cache=False):
         pairs = build_ribbon_pairs(
             coords_wgs, 0.45, W, H, tr, elev_at_ll, z_ref, 0.30,
             clip_to_bbox=True)
-        m = ribbon_mesh_from_pairs(pairs)
+        m = ribbon_mesh_from_pairs(pairs, skirt=FILL_DEPTH_MM)
         if m is None:
             return None
         colored(m, COLORS['streams'])
